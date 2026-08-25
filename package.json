@@ -1,0 +1,20 @@
+{
+  "name": "file-sharing-platform",
+  "version": "1.0.0",
+  "description": "Event-driven, load-balanced file sharing platform for large files",
+  "private": true,
+  "main": "src/server/node.js",
+  "scripts": {
+    "balancer": "node src/balancer/balancer.js",
+    "node1": "node src/server/node.js 1",
+    "node2": "node src/server/node.js 2",
+    "node3": "node src/server/node.js 3",
+    "dashboard": "node src/dashboard/dashboard.js",
+    "client": "node src/client/client.js",
+    "bench": "node src/bench/benchmark.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}

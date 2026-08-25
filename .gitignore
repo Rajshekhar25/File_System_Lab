@@ -4,3 +4,5 @@ storage/
 runtime/
 downloads/
 benchdata/
+node_modules/
+npm-debug.log*
