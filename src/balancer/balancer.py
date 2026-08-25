@@ -39,7 +39,7 @@ class NodeRegistry:
             self._state[node_id] = {
                 "node": node_id, "host": host, "port": port,
                 "alive": False, "active": 0, "served": 0,
-                "last_seen": 0.0, "failures": 0,
+                "pending": 0, "last_seen": 0.0, "failures": 0,
             }
 
     def snapshot(self):
@@ -79,6 +79,9 @@ class NodeRegistry:
                     if alive:
                         current["last_seen"] = time.time()
                         current["failures"] = 0
+                        # The ping carries the real number, so forget the
+                        # guesses we made since the previous round.
+                        current["pending"] = 0
                         if not was_alive:
                             print("[balancer] %s is UP" % node_id)
                     else:
@@ -89,13 +92,21 @@ class NodeRegistry:
             time.sleep(config.HEALTH_INTERVAL)
 
     def pick(self):
-        """Least-connections choice among the healthy nodes."""
+        """Least-connections choice among the healthy nodes.
+
+        `active` is only as fresh as the last health ping (2 s old at worst),
+        so ten clients arriving together would all be sent to the same node.
+        `pending` fixes that: it counts the clients we have just handed out and
+        is cleared the moment a real ping brings the true number back.
+        """
         with self._lock:
             healthy = [e for e in self._state.values() if e["alive"]]
-        if not healthy:
-            return None
-        healthy.sort(key=lambda e: (e["active"], e["served"]))
-        return healthy[0]
+            if not healthy:
+                return None
+            healthy.sort(key=lambda e: (e["active"] + e["pending"], e["served"]))
+            chosen = healthy[0]
+            chosen["pending"] += 1
+            return dict(chosen)
 
     def _write_status(self):
         path = os.path.join(config.RUNTIME_DIR, "balancer.json")

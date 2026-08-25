@@ -19,9 +19,11 @@ Rules, in plain English:
   * a file with no entry yet is free for anyone to claim.
 """
 
+import contextlib
 import json
 import os
 import threading
+import time
 
 from ..common import config
 from ..common.events import bus, POLICY_CHANGED
@@ -50,6 +52,38 @@ class PolicyStore:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as fh:
             json.dump(self._rules, fh, indent=2)
+
+    @contextlib.contextmanager
+    def _exclusive(self):
+        """Guard a read-modify-write of the shared policy file.
+
+        Every node runs in its own process but they all edit the same
+        policies.json. Without this, two nodes finishing an upload at the same
+        moment would each save their own copy and one rule would be lost. A
+        simple lock file (created with O_EXCL, which only one process can win)
+        serialises them.
+        """
+        lock_path = self.path + ".lock"
+        deadline = time.time() + 5.0
+        while True:
+            try:
+                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                break
+            except FileExistsError:
+                if time.time() > deadline:
+                    os.remove(lock_path)   # a crashed node left it behind
+                    continue
+                time.sleep(0.01)
+        try:
+            self._load()      # pick up anything another node just wrote
+            yield
+            self._save()
+        finally:
+            os.close(fd)
+            try:
+                os.remove(lock_path)
+            except OSError:
+                pass
 
     def reload(self):
         """Re-read the rules from disk (other nodes may have changed them)."""
@@ -85,7 +119,7 @@ class PolicyStore:
     # ----------------------------------------------------------------- writes
     def claim(self, user, filename):
         """Called after a successful upload: create the rule if it is new."""
-        with self._lock:
+        with self._lock, self._exclusive():
             created = filename not in self._rules
             if created:
                 self._rules[filename] = {
@@ -94,13 +128,12 @@ class PolicyStore:
                     "writers": [],
                     "public": False,
                 }
-                self._save()
         if created:
             bus.publish(POLICY_CHANGED, file=filename, user=user, action="owner")
 
     def share(self, owner, filename, target_user, permission):
         """Owner grants read or write access to another user."""
-        with self._lock:
+        with self._lock, self._exclusive():
             rule = self._rules.get(filename)
             if rule is None:
                 return False, "file not found"
@@ -116,21 +149,19 @@ class PolicyStore:
 
             if target_user not in bucket:
                 bucket.append(target_user)
-            self._save()
 
         bus.publish(POLICY_CHANGED, file=filename, user=owner,
                     action="share", target=target_user, permission=permission)
         return True, "granted %s access on %s to %s" % (permission, filename, target_user)
 
     def set_public(self, owner, filename, public=True):
-        with self._lock:
+        with self._lock, self._exclusive():
             rule = self._rules.get(filename)
             if rule is None:
                 return False, "file not found"
             if rule["owner"] != owner:
                 return False, "only the owner can change visibility"
             rule["public"] = bool(public)
-            self._save()
         bus.publish(POLICY_CHANGED, file=filename, user=owner, action="public")
         return True, "%s is now %s" % (filename, "public" if public else "private")
 

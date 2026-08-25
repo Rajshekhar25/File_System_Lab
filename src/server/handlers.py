@@ -8,8 +8,6 @@ which subscribed to the bus, does the rest.
 Adding a new operation = write a function and add one line to OPS.
 """
 
-import socket
-
 from ..common import config
 from ..common.events import (bus, ACCESS_DENIED, UPLOAD_STARTED, UPLOAD_PROGRESS,
                              UPLOAD_COMPLETED, UPLOAD_ABORTED, DOWNLOAD_STARTED,
@@ -57,14 +55,11 @@ def handle_upload(ctx, req, sock, stream):
         handle = ctx.storage.open_for_append(name, offset)
         try:
             while remaining > 0:
+                # A client that closed politely gives us b""; one that was
+                # killed gives us a connection reset. Both mean the same thing.
                 chunk = stream.read(min(config.CHUNK_SIZE, remaining))
                 if not chunk:
-                    # Client vanished (Ctrl+C, network drop, killed process).
-                    # The .part file stays on disk, so the next attempt resumes.
-                    bus.publish(UPLOAD_ABORTED, user=user, file=name,
-                                received=written, total=total,
-                                resume_at=written, node=ctx.node_id)
-                    return
+                    raise ConnectionError("client stopped sending")
                 handle.write(chunk)
                 written += len(chunk)
                 remaining -= len(chunk)
@@ -72,6 +67,13 @@ def handle_upload(ctx, req, sock, stream):
                     bus.publish(UPLOAD_PROGRESS, user=user, file=name,
                                 done=written, total=total, node=ctx.node_id)
                     next_report = written + PROGRESS_EVERY
+        except OSError:
+            # Client vanished (Ctrl+C, network drop, killed process). The
+            # .part file stays on disk, so the next attempt resumes from here.
+            bus.publish(UPLOAD_ABORTED, user=user, file=name,
+                        received=written, total=total,
+                        resume_at=written, node=ctx.node_id)
+            return
         finally:
             handle.close()
 
@@ -114,7 +116,7 @@ def handle_download(ctx, req, sock, stream):
                 bus.publish(DOWNLOAD_PROGRESS, user=user, file=name,
                             done=sent, total=size, node=ctx.node_id)
                 next_report = sent + PROGRESS_EVERY
-    except (socket.error, OSError):
+    except OSError:
         # Receiver disappeared half way through; it can resume from `sent`.
         bus.publish(DOWNLOAD_ABORTED, user=user, file=name, sent=sent,
                     total=size, node=ctx.node_id)
