@@ -2,146 +2,488 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>File Sharing Platform - Live Status</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Status - File Sharing Platform</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231b5fbe'/%3E%3Cpath d='M4 11.5V4.5h4.2L11 7.2v4.3z' fill='white'/%3E%3C/svg%3E">
 <style>
-  body   { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f4f6f8; color: #222; }
-  h1     { font-size: 22px; margin-bottom: 2px; }
-  h2     { font-size: 16px; margin: 26px 0 8px; }
-  .sub   { color: #666; font-size: 13px; margin-bottom: 18px; }
-  .card  { background: #fff; border: 1px solid #dde1e6; border-radius: 6px; padding: 14px; margin-bottom: 14px; }
-  table  { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eceff1; }
-  th     { color: #555; font-weight: 600; background: #fafbfc; }
-  .up    { color: #0a7d33; font-weight: 600; }
-  .down  { color: #c0392b; font-weight: 600; }
-  .pill  { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; background: #eceff1; }
-  .bar   { background: #e3e7ea; border-radius: 3px; height: 10px; width: 220px; display: inline-block; vertical-align: middle; }
-  .fill  { background: #2d7ff9; height: 10px; border-radius: 3px; }
-  .stats { display: flex; flex-wrap: wrap; gap: 10px; }
-  .stat  { background: #fff; border: 1px solid #dde1e6; border-radius: 6px; padding: 10px 16px; min-width: 130px; }
-  .stat b{ display: block; font-size: 20px; }
-  .ev    { font-family: Consolas, monospace; font-size: 12px; }
-  .muted { color: #888; }
+  /* ---- colour tokens, defined once so dark mode only swaps values ------- */
+  :root {
+    --bg:        #f2f4f7;
+    --card:      #ffffff;
+    --border:    #d3d8de;
+    --text:      #16191d;   /* 15.8:1 on card - well past the 4.5:1 minimum */
+    --muted:     #545a61;   /*  7.0:1 on card                               */
+    --head-bg:   #f7f8fa;
+    --up:        #0a6b2d;
+    --down:      #b3261e;
+    --accent:    #1b5fbe;
+    --bar-track: #dfe3e8;
+    --focus:     #1b5fbe;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #14171a;
+      --card:      #1e2226;
+      --border:    #3a4149;
+      --text:      #eef1f4;
+      --muted:     #b3bac1;
+      --head-bg:   #262b30;
+      --up:        #5fd68a;
+      --down:      #ff9c94;
+      --accent:    #7fb2ff;
+      --bar-track: #3a4149;
+      --focus:     #7fb2ff;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", system-ui, Arial, sans-serif;
+    font-size: 16px;          /* never below 16px: forces no zoom on mobile */
+    line-height: 1.55;
+    margin: 0;
+    padding: 24px 20px 64px;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* Keyboard users must always be able to see where they are. */
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+
+  /* Visible only to screen readers. */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  /* ...unless focused, so the skip link appears when tabbed to. */
+  .skip:focus {
+    position: static; width: auto; height: auto; margin: 0; clip: auto;
+    display: inline-block; padding: 8px 14px; background: var(--card);
+    border: 2px solid var(--accent); margin-bottom: 12px;
+  }
+
+  header { max-width: 1400px; margin: 0 auto 8px; }
+  main   { max-width: 1400px; margin: 0 auto; }
+
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 0 0 4px; }
+
+  .lede { color: var(--muted); margin: 0 0 16px; max-width: 70ch; }
+
+  /* --- the summary strip: one plain-English sentence + a pause control --- */
+  .statusbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 28px;
+  }
+  #summary { margin: 0; font-weight: 600; flex: 1 1 320px; }
+  #updated { color: var(--muted); font-size: 0.85rem; }
+
+  button {
+    font: inherit; font-size: 0.9rem; cursor: pointer;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px;
+    min-height: 40px;                     /* comfortable target size */
+  }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  section { margin-bottom: 32px; }
+
+  /* Short explanation under each heading - this is what makes the page
+     readable by somebody who did not build it. */
+  .hint { color: var(--muted); margin: 0 0 10px; font-size: 0.9rem; max-width: 80ch; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+
+  /* Wide tables scroll inside their own box instead of breaking the page. */
+  .scroll { overflow-x: auto; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  caption { text-align: left; padding: 12px 16px 0; color: var(--muted); font-size: 0.85rem; }
+  th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  th { background: var(--head-bg); font-weight: 600; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.nowrap { white-space: nowrap; }
+
+  /* State is never shown by colour alone - the dot has a text label beside
+     it, so it still reads correctly in greyscale or with colour blindness. */
+  .state { font-weight: 600; white-space: nowrap; }
+  .state.up   { color: var(--up); }
+  .state.down { color: var(--down); }
+  .dot { font-size: 0.7em; vertical-align: 0.18em; margin-right: 4px; }
+
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 11px;
+    font-size: 0.78rem; background: var(--head-bg); border: 1px solid var(--border);
+  }
+
+  /* --- progress bars --- */
+  .bar {
+    background: var(--bar-track); border-radius: 4px; height: 12px;
+    width: 200px; max-width: 40vw; display: inline-block; vertical-align: middle;
+    overflow: hidden;
+  }
+  .fill { background: var(--accent); height: 100%; transition: width 0.3s ease; }
+  @media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
+
+  /* --- the totals cards --- */
+  .stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .stat .value { display: block; font-size: 1.7rem; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .stat .label { color: var(--muted); font-size: 0.85rem; }
+
+  /* --- empty states that tell you what to do next --- */
+  .empty { padding: 18px 16px; color: var(--muted); }
+  .empty code {
+    display: inline-block; margin-top: 6px; padding: 6px 10px;
+    background: var(--head-bg); border: 1px solid var(--border);
+    border-radius: 5px; font-size: 0.85rem; color: var(--text);
+  }
+
+  .mono { font-family: Consolas, "Courier New", monospace; font-size: 0.87rem; }
+  time { color: var(--muted); white-space: nowrap; }
 </style>
 </head>
 <body>
+
+<a class="skip sr-only" href="#main">Skip to main content</a>
+
+<header>
   <h1>File Sharing Platform &mdash; Live Status</h1>
-  <div class="sub">Refreshes every 1.5 s. Balancer: <span id="bal">?</span></div>
+  <p class="lede">
+    A read-only view of the local cloud. Every action (upload, download, share)
+    is run from the terminal; this page only shows what the servers are doing.
+  </p>
 
-  <h2>Storage nodes (availability)</h2>
-  <div class="card">
-    <table>
-      <thead><tr><th>Node</th><th>Address</th><th>State</th><th>Uptime</th>
-      <th>Active</th><th>Uploads ok / failed</th><th>Downloads ok / failed</th>
-      <th>Bytes in</th><th>Bytes out</th></tr></thead>
-      <tbody id="nodes"></tbody>
-    </table>
+  <div class="statusbar">
+    <!-- role="status" announces changes politely: a screen reader reads the
+         new sentence when it changes, without interrupting the user. -->
+    <p id="summary" role="status">Loading status&hellip;</p>
+    <span id="updated"></span>
+    <!-- WCAG 2.2.2 requires a way to stop auto-updating content. -->
+    <button id="pause" type="button" aria-pressed="false">Pause updates</button>
   </div>
+</header>
 
-  <h2>Transfers in progress</h2>
-  <div class="card"><table>
-    <thead><tr><th>Node</th><th>Type</th><th>User</th><th>File</th><th>Progress</th></tr></thead>
-    <tbody id="transfers"></tbody>
-  </table></div>
+<main id="main">
 
-  <h2>Totals across the cluster</h2>
-  <div class="stats" id="totals"></div>
+  <section aria-labelledby="h-nodes">
+    <h2 id="h-nodes">Storage nodes</h2>
+    <p class="hint">
+      The three servers holding your files. <strong>Active</strong> is how many
+      clients each one is serving right now &mdash; the balancer sends the next
+      client to whichever is least busy. Close a node's terminal window and it
+      turns DOWN here within about two seconds.
+    </p>
+    <div class="card scroll">
+      <table>
+        <caption class="sr-only">Storage node availability and traffic</caption>
+        <thead>
+          <tr>
+            <th scope="col">Node</th>
+            <th scope="col">Address</th>
+            <th scope="col">State</th>
+            <th scope="col">Uptime</th>
+            <th scope="col" class="num">Active</th>
+            <th scope="col" class="num">Uploads ok</th>
+            <th scope="col" class="num">Uploads failed</th>
+            <th scope="col" class="num">Downloads ok</th>
+            <th scope="col" class="num">Downloads failed</th>
+            <th scope="col" class="num">Received</th>
+            <th scope="col" class="num">Sent</th>
+          </tr>
+        </thead>
+        <tbody id="nodes"></tbody>
+      </table>
+    </div>
+  </section>
 
-  <h2>Files and sharing policy</h2>
-  <div class="card"><table>
-    <thead><tr><th>File</th><th>Size</th><th>State</th><th>Owner</th>
-    <th>Readers</th><th>Writers</th><th>Visibility</th></tr></thead>
-    <tbody id="files"></tbody>
-  </table></div>
+  <section aria-labelledby="h-transfers">
+    <h2 id="h-transfers">Transfers in progress</h2>
+    <p class="hint">
+      Files moving right now. On a local machine a transfer often finishes
+      faster than this page refreshes, so a small file may never appear here
+      &mdash; check <em>Stored files</em> below to confirm it arrived.
+    </p>
+    <div class="card scroll">
+      <table>
+        <caption class="sr-only">Transfers currently in progress</caption>
+        <thead>
+          <tr>
+            <th scope="col">Node</th>
+            <th scope="col">Direction</th>
+            <th scope="col">User</th>
+            <th scope="col">File</th>
+            <th scope="col">Progress</th>
+          </tr>
+        </thead>
+        <tbody id="transfers"></tbody>
+      </table>
+    </div>
+  </section>
 
-  <h2>Recent events</h2>
-  <div class="card"><table>
-    <thead><tr><th>Time</th><th>Node</th><th>Event</th><th>User</th><th>File</th></tr></thead>
-    <tbody id="events" class="ev"></tbody>
-  </table></div>
+  <section aria-labelledby="h-totals">
+    <h2 id="h-totals">Totals across the cluster</h2>
+    <p class="hint">
+      Counted since the servers last started. <strong>Aborted</strong> means a
+      transfer was cut off (a killed client or a crashed node);
+      <strong>Access denied</strong> means the sharing policy refused someone.
+    </p>
+    <div class="stats" id="totals"></div>
+  </section>
+
+  <section aria-labelledby="h-files">
+    <h2 id="h-files">Stored files and who can use them</h2>
+    <p class="hint">
+      What the cloud actually holds. <strong>Owner</strong> is whoever uploaded
+      it first. <strong>Readers</strong> may download it, <strong>writers</strong>
+      may overwrite it, and a <strong>public</strong> file is readable by
+      everyone. <em>Incomplete</em> marks a half-finished upload waiting to be
+      resumed.
+    </p>
+    <div class="card scroll">
+      <table>
+        <caption class="sr-only">Stored files with their sharing permissions</caption>
+        <thead>
+          <tr>
+            <th scope="col">File</th>
+            <th scope="col" class="num">Size</th>
+            <th scope="col">State</th>
+            <th scope="col">Owner</th>
+            <th scope="col">Readers</th>
+            <th scope="col">Writers</th>
+            <th scope="col">Visibility</th>
+          </tr>
+        </thead>
+        <tbody id="files"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-events">
+    <h2 id="h-events">Recent activity</h2>
+    <p class="hint">
+      The raw event feed, newest first. Every line here was published on the
+      event bus by a server and picked up by a listener &mdash; this is the
+      event-driven architecture in action.
+    </p>
+    <div class="card scroll">
+      <table>
+        <caption class="sr-only">Most recent events, newest first</caption>
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Node</th>
+            <th scope="col">Event</th>
+            <th scope="col">User</th>
+            <th scope="col">File</th>
+          </tr>
+        </thead>
+        <tbody id="events"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
 
 <script>
-function size(n) {
-  var units = ["B", "KB", "MB", "GB", "TB"], i = 0;
-  n = n || 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-  return n.toFixed(1) + " " + units[i];
+'use strict';
+
+/* Filenames and user names come from whoever ran the client, so they are
+   untrusted text. Escaping them stops a file called <img onerror=...> from
+   running code inside this page. */
+function esc(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-function clock(ts) { return new Date(ts * 1000).toLocaleTimeString(); }
-function cell(text) { return "<td>" + text + "</td>"; }
+
+function size(bytes) {
+  var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = Number(bytes) || 0, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return value.toFixed(1) + ' ' + units[unit];
+}
+
+/* "3511 s" means nothing at a glance; "58m 31s" does. */
+function duration(seconds) {
+  var total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (total < 60) return total + 's';
+  var minutes = Math.floor(total / 60);
+  if (minutes < 60) return minutes + 'm ' + (total % 60) + 's';
+  return Math.floor(minutes / 60) + 'h ' + (minutes % 60) + 'm';
+}
+
+function ago(ts) {
+  var seconds = Math.max(0, Math.round(Date.now() / 1000 - ts));
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return seconds + 's ago';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+  return Math.floor(seconds / 3600) + 'h ago';
+}
+
+function cell(html, className) {
+  return '<td' + (className ? ' class="' + className + '"' : '') + '>' + html + '</td>';
+}
+
+function stateBadge(isUp) {
+  return isUp
+    ? '<span class="state up"><span class="dot" aria-hidden="true">&#9679;</span>UP</span>'
+    : '<span class="state down"><span class="dot" aria-hidden="true">&#9675;</span>DOWN</span>';
+}
+
+function emptyRow(columns, message, command) {
+  return '<tr><td class="empty" colspan="' + columns + '">' + message
+    + (command ? '<br><code>' + esc(command) + '</code>' : '') + '</td></tr>';
+}
+
+/* ------------------------------------------------------------------ render */
+var lastSummary = '';
 
 function draw(data) {
-  document.getElementById("bal").innerHTML = data.balancer_alive
-    ? "<span class='up'>running</span>" : "<span class='down'>not running</span>";
+  var online = data.nodes.filter(function (n) { return n.reachable && !n.stale; }).length;
+  var moving = data.nodes.reduce(function (sum, n) { return sum + (n.transfers || []).length; }, 0);
 
-  // nodes
-  var rows = "";
-  data.nodes.forEach(function (n) {
+  /* One plain sentence, and only re-announced to screen readers when it
+     actually changes. */
+  var summary = online + ' of ' + data.nodes.length + ' nodes online'
+    + ' · balancer ' + (data.balancer_alive ? 'running' : 'not running')
+    + ' · ' + (moving ? moving + ' transfer' + (moving === 1 ? '' : 's') + ' in progress' : 'idle')
+    + ' · ' + data.files.length + ' file' + (data.files.length === 1 ? '' : 's') + ' stored';
+
+  if (summary !== lastSummary) {
+    document.getElementById('summary').textContent = summary;
+    lastSummary = summary;
+  }
+  document.getElementById('updated').textContent = 'updated ' + ago(data.now);
+
+  /* --- nodes --- */
+  var rows = data.nodes.map(function (n) {
     var c = n.counters || {};
     var live = n.reachable && !n.stale;
-    rows += "<tr>" + cell("<b>" + n.node + "</b>") + cell(n.address || "-")
-      + cell(live ? "<span class='up'>UP</span>"
-                  : "<span class='down'>DOWN</span>")
-      + cell(live ? (n.uptime || 0).toFixed(0) + " s" : "-")
-      + cell(n.active_connections || 0)
-      + cell((c.uploads_completed || 0) + " / " + (c.uploads_aborted || 0))
-      + cell((c.downloads_completed || 0) + " / " + (c.downloads_aborted || 0))
-      + cell(size(c.bytes_in)) + cell(size(c.bytes_out)) + "</tr>";
-  });
-  document.getElementById("nodes").innerHTML = rows || "<tr><td colspan='9' class='muted'>no nodes started</td></tr>";
+    return '<tr>'
+      + '<th scope="row">' + esc(n.node) + '</th>'
+      + cell('<span class="mono">' + esc(n.address || '-') + '</span>')
+      + cell(stateBadge(live))
+      + cell(live ? duration(n.uptime) : '&mdash;', 'nowrap')
+      + cell(n.active_connections || 0, 'num')
+      + cell(c.uploads_completed || 0, 'num')
+      + cell(c.uploads_aborted || 0, 'num')
+      + cell(c.downloads_completed || 0, 'num')
+      + cell(c.downloads_aborted || 0, 'num')
+      + cell(size(c.bytes_in), 'num')
+      + cell(size(c.bytes_out), 'num')
+      + '</tr>';
+  }).join('');
+  document.getElementById('nodes').innerHTML = rows
+    || emptyRow(11, 'No nodes have started yet.', 'npm run node1');
 
-  // transfers
-  rows = "";
+  /* --- transfers --- */
+  rows = '';
   data.nodes.forEach(function (n) {
     (n.transfers || []).forEach(function (t) {
-      var pct = t.total ? (t.done * 100 / t.total) : 0;
-      rows += "<tr>" + cell(n.node) + cell("<span class='pill'>" + t.kind + "</span>")
-        + cell(t.user) + cell(t.file)
-        + cell("<span class='bar'><span class='fill' style='width:"
-               + pct.toFixed(1) + "%'></span></span> " + pct.toFixed(1) + "% ("
-               + size(t.done) + " / " + size(t.total) + ")") + "</tr>";
+      var percent = t.total ? (t.done * 100 / t.total) : 0;
+      var label = t.kind + ' of ' + t.file + ' by ' + t.user;
+      rows += '<tr>'
+        + '<th scope="row">' + esc(n.node) + '</th>'
+        + cell('<span class="pill">' + esc(t.kind) + '</span>')
+        + cell(esc(t.user))
+        + cell(esc(t.file))
+        + cell('<span class="bar" role="progressbar" aria-label="' + esc(label) + '"'
+            + ' aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent.toFixed(0) + '">'
+            + '<span class="fill" style="width:' + percent.toFixed(1) + '%"></span></span> '
+            + percent.toFixed(1) + '% (' + size(t.done) + ' / ' + size(t.total) + ')')
+        + '</tr>';
     });
   });
-  document.getElementById("transfers").innerHTML = rows || "<tr><td colspan='5' class='muted'>idle</td></tr>";
+  document.getElementById('transfers').innerHTML = rows
+    || emptyRow(5, 'Nothing is transferring at this moment.');
 
-  // totals
-  var t = data.totals || {}, html = "";
-  [["Uploads done", t.uploads_completed || 0], ["Uploads aborted", t.uploads_aborted || 0],
-   ["Downloads done", t.downloads_completed || 0], ["Downloads aborted", t.downloads_aborted || 0],
-   ["Access denied", t.access_denied || 0], ["Requests served", t.connections || 0],
-   ["Bytes received", size(t.bytes_in)], ["Bytes sent", size(t.bytes_out)]
-  ].forEach(function (pair) {
-    html += "<div class='stat'><b>" + pair[1] + "</b>" + pair[0] + "</div>";
-  });
-  document.getElementById("totals").innerHTML = html;
+  /* --- totals --- */
+  var t = data.totals || {};
+  document.getElementById('totals').innerHTML = [
+    ['Uploads done', t.uploads_completed || 0],
+    ['Uploads aborted', t.uploads_aborted || 0],
+    ['Downloads done', t.downloads_completed || 0],
+    ['Downloads aborted', t.downloads_aborted || 0],
+    ['Access denied', t.access_denied || 0],
+    ['Requests served', t.connections || 0],
+    ['Data received', size(t.bytes_in)],
+    ['Data sent', size(t.bytes_out)]
+  ].map(function (pair) {
+    return '<div class="stat"><span class="value">' + esc(pair[1]) + '</span>'
+      + '<span class="label">' + esc(pair[0]) + '</span></div>';
+  }).join('');
 
-  // files
-  rows = "";
-  data.files.forEach(function (f) {
-    rows += "<tr>" + cell(f.name) + cell(size(f.size))
-      + cell(f.state === "available" ? "<span class='up'>available</span>"
-                                     : "<span class='down'>incomplete</span>")
-      + cell(f.owner) + cell(f.readers.join(", ") || "-")
-      + cell(f.writers.join(", ") || "-")
-      + cell(f.public ? "public" : "private") + "</tr>";
-  });
-  document.getElementById("files").innerHTML = rows || "<tr><td colspan='7' class='muted'>no files yet</td></tr>";
+  /* --- files --- */
+  rows = data.files.map(function (f) {
+    var complete = f.state === 'available';
+    return '<tr>'
+      + '<th scope="row">' + esc(f.name) + '</th>'
+      + cell(size(f.size), 'num')
+      + cell('<span class="state ' + (complete ? 'up' : 'down') + '">'
+          + (complete ? 'available' : 'incomplete') + '</span>')
+      + cell(esc(f.owner))
+      + cell(f.readers.length ? esc(f.readers.join(', ')) : '<span class="empty">none</span>')
+      + cell(f.writers.length ? esc(f.writers.join(', ')) : '<span class="empty">none</span>')
+      + cell(f.public ? '<span class="pill">public</span>' : 'private')
+      + '</tr>';
+  }).join('');
+  document.getElementById('files').innerHTML = rows
+    || emptyRow(7, 'No files stored yet. Upload one from a terminal:',
+        'node src/client/client.js <user> upload <path to file> [name]');
 
-  // events
-  rows = "";
-  data.events.forEach(function (e) {
-    rows += "<tr>" + cell(clock(e.ts)) + cell(e.node) + cell(e.type)
-      + cell(e.user || "-") + cell(e.file || "-") + "</tr>";
-  });
-  document.getElementById("events").innerHTML = rows || "<tr><td colspan='5' class='muted'>nothing yet</td></tr>";
+  /* --- events --- */
+  rows = data.events.map(function (e) {
+    var when = new Date(e.ts * 1000);
+    return '<tr>'
+      + '<td><time datetime="' + when.toISOString() + '">' + ago(e.ts) + '</time></td>'
+      + cell(esc(e.node))
+      + cell('<span class="mono">' + esc(e.type) + '</span>')
+      + cell(esc(e.user || '-'))
+      + cell(esc(e.file || '-'))
+      + '</tr>';
+  }).join('');
+  document.getElementById('events').innerHTML = rows
+    || emptyRow(5, 'No activity recorded yet.');
 }
+
+/* ------------------------------------------------------------------- poll */
+var REFRESH_MS = 1500;
+var timer = null;
 
 function poll() {
-  fetch("/api/status").then(function (r) { return r.json(); }).then(draw)
-    .catch(function () { document.getElementById("bal").textContent = "dashboard offline"; });
+  fetch('/api/status')
+    .then(function (r) { return r.json(); })
+    .then(draw)
+    .catch(function () {
+      document.getElementById('summary').textContent =
+        'Cannot reach the dashboard server. Is it still running?';
+      lastSummary = '';
+    });
 }
-poll();
-setInterval(poll, 1500);
+
+function start() { if (!timer) { poll(); timer = setInterval(poll, REFRESH_MS); } }
+function stop() { clearInterval(timer); timer = null; }
+
+var pauseButton = document.getElementById('pause');
+pauseButton.addEventListener('click', function () {
+  var paused = pauseButton.getAttribute('aria-pressed') === 'true';
+  if (paused) {
+    pauseButton.setAttribute('aria-pressed', 'false');
+    pauseButton.textContent = 'Pause updates';
+    start();
+  } else {
+    pauseButton.setAttribute('aria-pressed', 'true');
+    pauseButton.textContent = 'Resume updates';
+    stop();
+  }
+});
+
+start();
 </script>
 </body>
 </html>
