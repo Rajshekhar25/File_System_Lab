@@ -151,6 +151,8 @@ class Client {
         await this._push(node, localPath, name, offset, total);
       } catch (err) {
         if (err instanceof RemoteRefused) throw err; // a "no" is final
+        // The progress line has no trailing newline yet; close it first.
+        if (!options.quiet) process.stdout.write('\n');
         console.log(`  transfer interrupted: ${err.message}`);
         if (attempt > RETRIES) {
           throw new TransferError(`upload failed after ${attempt} attempts`);
@@ -221,6 +223,8 @@ class Client {
         total = await this._pull(node, remoteName, partPath, offset);
       } catch (err) {
         if (err instanceof RemoteRefused) throw err; // a "no" is final
+        // The progress line has no trailing newline yet; close it first.
+        if (!options.quiet) process.stdout.write('\n');
         console.log(`  transfer interrupted: ${err.message}`);
         if (attempt > RETRIES) {
           throw new TransferError(`download failed after ${attempt} attempts`);
