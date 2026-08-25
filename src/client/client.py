@@ -25,6 +25,7 @@ from ..common.protocol import send_json, recv_json, human_size
 
 RETRIES = 3            # how many times to re-dial after a failure
 RETRY_PAUSE = 1.5      # seconds to wait before re-dialling
+QUIET = False          # the benchmark sets this to hide per-chunk progress
 
 
 class TransferError(Exception):
@@ -137,7 +138,8 @@ class Client:
                     sock.sendall(chunk)
                     sent += len(chunk)
                     _progress("upload", remote_name, sent, total)
-            print()
+            if not QUIET:
+                print()
 
             sock.settimeout(config.SOCKET_TIMEOUT)
             final = recv_json(stream)
@@ -203,7 +205,8 @@ class Client:
                     fh.write(chunk)
                     received += len(chunk)
                     _progress("download", remote_name, received, total)
-            print()
+            if not QUIET:
+                print()
             return total
         finally:
             sock.close()
@@ -226,7 +229,7 @@ class Client:
 
 
 def _progress(kind, name, done, total):
-    if not total:
+    if QUIET or not total:
         return
     percent = done * 100.0 / total
     sys.stdout.write("\r  %s %s  %5.1f%%  (%s / %s)"
