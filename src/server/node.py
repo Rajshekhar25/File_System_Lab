@@ -64,9 +64,8 @@ class ClientHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         ctx = self.server.ctx
-        ctx.begin_request()
         peer = "%s:%d" % self.client_address
-        bus.publish(CLIENT_CONNECTED, peer=peer, node=ctx.node_id)
+        counted = False
 
         stream = self.request.makefile("rb")
         try:
@@ -74,6 +73,14 @@ class ClientHandler(socketserver.BaseRequestHandler):
             if request is None:
                 return
             operation = str(request.get("op", "")).upper()
+
+            # Health pings are bookkeeping, not user load: they must not show
+            # up in the number the balancer uses to compare nodes.
+            if operation != "PING":
+                ctx.begin_request()
+                counted = True
+                bus.publish(CLIENT_CONNECTED, peer=peer, node=ctx.node_id)
+
             handler = OPS.get(operation)
             if handler is None:
                 send_json(self.request, {"ok": False,
@@ -88,8 +95,9 @@ class ClientHandler(socketserver.BaseRequestHandler):
                 stream.close()
             except OSError:
                 pass
-            ctx.end_request()
-            bus.publish(CLIENT_DISCONNECTED, peer=peer, node=ctx.node_id)
+            if counted:
+                ctx.end_request()
+                bus.publish(CLIENT_DISCONNECTED, peer=peer, node=ctx.node_id)
 
 
 class StorageNode(socketserver.ThreadingTCPServer):
